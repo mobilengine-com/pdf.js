@@ -1844,28 +1844,6 @@ class PDFPageProxy {
   /**
    * @private
    */
-  _renderPageChunk(operatorListChunk, intentState) {
-    // Add the new chunk to the current operator list.
-    for (let i = 0, ii = operatorListChunk.length; i < ii; i++) {
-      intentState.operatorList.fnArray.push(operatorListChunk.fnArray[i]);
-      intentState.operatorList.argsArray.push(operatorListChunk.argsArray[i]);
-    }
-    intentState.operatorList.lastChunk = operatorListChunk.lastChunk;
-    intentState.operatorList.separateAnnots = operatorListChunk.separateAnnots;
-
-    // Notify all the rendering tasks there are more operators to be consumed.
-    for (const internalRenderTask of intentState.renderTasks) {
-      internalRenderTask.operatorListChanged();
-    }
-
-    if (operatorListChunk.lastChunk) {
-      this.#tryCleanup();
-    }
-  }
-
-  /**
-   * @private
-   */
   _pumpOperatorList({
     renderingIntent,
     cacheKey,
@@ -1896,6 +1874,8 @@ class PDFPageProxy {
     const intentState = this._intentStates.get(cacheKey);
     intentState.streamReader = reader;
 
+    const start = new Date();
+    let lastOperatorListChanged = 0;
     const pump = () => {
       reader.read().then(
         ({ value, done }) => {
@@ -1906,7 +1886,32 @@ class PDFPageProxy {
           if (this._transport.destroyed) {
             return; // Ignore any pending requests if the worker was terminated.
           }
-          this._renderPageChunk(value, intentState);
+
+          const operatorListChunk = value;
+
+          // Add the new chunk to the current operator list.
+          for (let i = 0, ii = operatorListChunk.length; i < ii; i++) {
+            intentState.operatorList.fnArray.push(operatorListChunk.fnArray[i]);
+            intentState.operatorList.argsArray.push(operatorListChunk.argsArray[i]);
+          }
+          intentState.operatorList.lastChunk = operatorListChunk.lastChunk;
+          intentState.operatorList.separateAnnots = operatorListChunk.separateAnnots;
+
+          const now = new Date();
+          const initialDrawing = now - start < 250 && now - lastOperatorListChanged > 50;
+          const longDrawing = now - lastOperatorListChanged > 250;
+          if (initialDrawing || longDrawing || operatorListChunk.lastChunk) {
+            // Notify all the rendering tasks there are more operators to be consumed.
+            for (const internalRenderTask of intentState.renderTasks) {
+              internalRenderTask.operatorListChanged();
+            }
+            lastOperatorListChanged = now;
+          }
+
+          if (operatorListChunk.lastChunk) {
+            this.#tryCleanup();
+          }
+
           pump();
         },
         reason => {
