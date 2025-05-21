@@ -1043,10 +1043,7 @@ class PDFPageView extends BasePDFPageView {
       : null;
     const resultPromise = this._drawCanvas(
       this._getRenderingContext(ctx, transform),
-      () => {
-        prevCanvas?.remove();
-        this._resetCanvas();
-      },
+      () => {},
       renderTask => {
         // Ensure that the thumbnails won't become partially (or fully) blank,
         // for documents that contain interactive form elements.
